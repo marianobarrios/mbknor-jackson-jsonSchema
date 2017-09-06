@@ -2,7 +2,6 @@ package com.simscale.specs.schemagen
 
 import java.util
 import java.util.Optional
-import java.util.function.Supplier
 import javax.validation.constraints._
 
 import com.fasterxml.jackson.annotation.{JsonPropertyDescription, JsonSubTypes, JsonTypeInfo}
@@ -32,8 +31,7 @@ object JsonSchemaConfig {
     customType2FormatMapping = Map(),
     useMultipleEditorSelectViaProperty = false,
     uniqueItemClasses = Set(),
-    classTypeReMapping = Map(),
-    jsonSuppliers = Map()
+    classTypeReMapping = Map()
   )
 
   /**
@@ -60,8 +58,7 @@ object JsonSchemaConfig {
       classOf[scala.collection.mutable.Set[_]],
       classOf[java.util.Set[_]]
     ),
-    classTypeReMapping = Map(),
-    jsonSuppliers = Map()
+    classTypeReMapping = Map()
   )
 
   /**
@@ -82,8 +79,7 @@ object JsonSchemaConfig {
     customType2FormatMapping = Map(),
     useMultipleEditorSelectViaProperty = false,
     uniqueItemClasses = Set(),
-    classTypeReMapping = Map(),
-    jsonSuppliers = Map()
+    classTypeReMapping = Map()
   )
 
 }
@@ -97,8 +93,7 @@ case class JsonSchemaConfig(
   customType2FormatMapping:Map[String, String],
   useMultipleEditorSelectViaProperty:Boolean, // https://github.com/jdorn/json-editor/issues/709
   uniqueItemClasses:Set[Class[_]], // If rendering array and type is instanceOf class in this set, then we add 'uniqueItems": true' to schema - See // https://github.com/jdorn/json-editor for more info
-  classTypeReMapping:Map[Class[_], Class[_]], // Can be used to prevent rendering using polymorphism for specific classes.
-  jsonSuppliers:Map[String, Supplier[JsonNode]] // Suppliers in this map can be accessed using @JsonSchemaInject(jsonSupplierViaLookup = "lookupKey")
+  classTypeReMapping:Map[Class[_], Class[_]] // Can be used to prevent rendering using polymorphism for specific classes.
 )
 
 
@@ -598,29 +593,6 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
       _type
     }
 
-    private def injectFromJsonSchemaInject(a: JsonSchemaInject, thisObjectNode:ObjectNode): Unit ={
-      // Must parse json
-      val injectJsonNode = objectMapper.readTree(a.json())
-      Option(a.jsonSupplier())
-        .flatMap(cls => Option(cls.newInstance().get()))
-        .foreach(json => merge(injectJsonNode, json))
-      if (a.jsonSupplierViaLookup().nonEmpty) {
-        val json = config.jsonSuppliers.get(a.jsonSupplierViaLookup()).getOrElse(throw new Exception(s"@JsonSchemaInject(jsonSupplierLookup='${a.jsonSupplierViaLookup()}') does not exist in config.jsonSupplierLookup-map")).get()
-        merge(injectJsonNode, json)
-      }
-      a.strings().foreach(v => injectJsonNode.visit(v.path(), (o, n) => o.put(n, v.value())))
-      a.ints().foreach(v => injectJsonNode.visit(v.path(), (o, n) => o.put(n, v.value())))
-      a.bools().foreach(v => injectJsonNode.visit(v.path(), (o, n) => o.put(n, v.value())))
-
-      if ( !a.merge()) {
-        // Since we're not merging, we must remove all content of thisObjectNode before injecting.
-        // We cannot just "replace" it with injectJsonNode, since thisObjectNode already have been added to its parent
-        thisObjectNode.removeAll()
-      }
-
-      merge(thisObjectNode, injectJsonNode)
-    }
-
     override def expectObjectFormat(_type: JavaType) = {
 
       val subTypes: List[Class[_]] = extractSubTypes(_type)
@@ -700,13 +672,6 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
                     optionsNode.put(item.name, item.value)
                 }
             }
-
-            // Optionally add JsonSchemaInject
-            Option(ac.getAnnotations.get(classOf[JsonSchemaInject])).foreach {
-              a =>
-                injectFromJsonSchemaInject(a, thisObjectNode)
-            }
-
 
             val propertiesNode = JsonNodeFactory.instance.objectNode()
             thisObjectNode.set("properties", propertiesNode)
@@ -891,19 +856,6 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
                     }
                 }
 
-                // Optionally add JsonSchemaInject
-                prop.flatMap {
-                  p:BeanProperty =>
-                    Option(p.getAnnotation(classOf[JsonSchemaInject])) match {
-                      case Some(a) => Some(a)
-                      case None =>
-                        // Try to look at the class itself -- Looks like this is the only way to find it if the type is Enum
-                        Option(p.getType.getRawClass.getAnnotation(classOf[JsonSchemaInject]))
-                    }
-                }.foreach {
-                  a =>
-                    injectFromJsonSchemaInject(a, thisPropertyNode.meta)
-                }
               }
 
               override def optionalProperty(prop: BeanProperty): Unit = {

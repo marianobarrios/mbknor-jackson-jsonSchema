@@ -484,7 +484,6 @@ class JsonSchemaGeneratorTest extends FunSuite with Matchers {
 
       assert(schema.at("/properties/myEnum/type").asText() == "string")
       assert(getArrayNodeAsListOfStrings(schema.at("/properties/myEnum/enum")) == MyEnum.values().toList.map(_.toString))
-      assert(schema.at("/properties/myEnum/JsonSchemaInjectOnEnum").asText() == "true")
     }
 
     // Java with nullable types
@@ -1031,36 +1030,6 @@ class JsonSchemaGeneratorTest extends FunSuite with Matchers {
 
       assert(schema.at("/definitions/UsingJsonSchemaOptionsChild2/options/classOption2").asText() == "classOptionValue2")
       assert(schema.at("/definitions/UsingJsonSchemaOptionsChild2/properties/propertyUsingOneProperty/options/o1").asText() == "v1")
-    }
-  }
-
-  test("UsingJsonSchemaInject") {
-    {
-
-      val customUserNameLoaderVariable = "xx"
-      val customUserNamesLoader = new CustomUserNamesLoader(customUserNameLoaderVariable)
-
-      val config = JsonSchemaConfig.vanillaJsonSchemaDraft4.copy(jsonSuppliers = Map("myCustomUserNamesLoader" -> customUserNamesLoader))
-      val _jsonSchemaGeneratorScala = new JsonSchemaGenerator(_objectMapperScala, config)
-      val schema = _jsonSchemaGeneratorScala.generateJsonSchema(classOf[UsingJsonSchemaInject])
-
-      println("--------------------------------------------")
-      println(asPrettyJson(schema, _jsonSchemaGeneratorScala.rootObjectMapper))
-
-      assert(schema.at("/patternProperties/^s[a-zA-Z0-9]+/type").asText() == "string")
-      assert(schema.at("/patternProperties/^i[a-zA-Z0-9]+/type").asText() == "integer")
-      assert(schema.at("/properties/sa/type").asText() == "string")
-      assert(schema.at("/properties/sa/options/hidden").asText() == "true")
-      assert(schema.at("/properties/saMergeFalse/type").asText() == "integer")
-      assert(schema.at("/properties/saMergeFalse/default").asText() == "12")
-      assert(schema.at("/properties/saMergeFalse/pattern").isMissingNode)
-      assert(schema.at("/properties/ib/type").asText() == "integer")
-      assert(schema.at("/properties/ib/multipleOf").asInt() == 7)
-      assert(schema.at("/properties/ib/exclusiveMinimum").asBoolean())
-      assert(schema.at("/properties/uns/items/enum/0").asText() == "foo")
-      assert(schema.at("/properties/uns/items/enum/1").asText() == "bar")
-      assert(schema.at("/properties/uns2/items/enum/0").asText() == "foo_" + customUserNameLoaderVariable)
-      assert(schema.at("/properties/uns2/items/enum/1").asText() == "bar_" + customUserNameLoaderVariable)
     }
   }
 
