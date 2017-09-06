@@ -4,10 +4,7 @@ import java.util.function.Supplier
 import javax.validation.constraints.{Min, Pattern}
 
 import com.fasterxml.jackson.databind.{JsonNode, ObjectMapper}
-import com.fasterxml.jackson.databind.node.{ArrayNode, ObjectNode}
 import com.simscale.specs.schemagen.{JsonSchemaBool, JsonSchemaInject, JsonSchemaInt, JsonSchemaString}
-
-import scala.annotation.meta.field
 
 
 @JsonSchemaInject(

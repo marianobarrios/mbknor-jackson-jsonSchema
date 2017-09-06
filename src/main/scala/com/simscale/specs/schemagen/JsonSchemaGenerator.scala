@@ -24,13 +24,9 @@ object JsonSchemaGenerator {
 object JsonSchemaConfig {
 
   val vanillaJsonSchemaDraft4 = JsonSchemaConfig(
-    autoGenerateTitleForProperties = false,
     defaultArrayFormat = None,
     useOneOfForOption = false,
     useOneOfForNullables = false,
-    usePropertyOrdering = false,
-    hidePolymorphismTypeProperty = false,
-    disableWarnings = false,
     useMinLengthForNotNull = false,
     useTypeIdForDefinitionName = false,
     customType2FormatMapping = Map(),
@@ -47,23 +43,16 @@ object JsonSchemaConfig {
     * defaultArrayFormat - this will result in a better gui than te default one.
     */
   val html5EnabledSchema = JsonSchemaConfig(
-    autoGenerateTitleForProperties = true,
     defaultArrayFormat = Some("table"),
     useOneOfForOption = true,
     useOneOfForNullables = false,
-    usePropertyOrdering = true,
-    hidePolymorphismTypeProperty = true,
-    disableWarnings = false,
     useMinLengthForNotNull = true,
     useTypeIdForDefinitionName = false,
     customType2FormatMapping = Map[String,String](
       // Java7 dates
       "java.time.LocalDateTime" -> "datetime-local",
       "java.time.OffsetDateTime" -> "datetime",
-      "java.time.LocalDate" -> "date",
-
-      // Joda-dates
-      "org.joda.time.LocalDate" -> "date"
+      "java.time.LocalDate" -> "date"
     ),
     useMultipleEditorSelectViaProperty = true,
     uniqueItemClasses = Set(
@@ -85,13 +74,9 @@ object JsonSchemaConfig {
     * a `NotNull` annotation on the given property, or setting the `required` attribute of the `JsonProperty` annotation.
     */
   val nullableJsonSchemaDraft4 = JsonSchemaConfig (
-    autoGenerateTitleForProperties = false,
     defaultArrayFormat = None,
     useOneOfForOption = true,
     useOneOfForNullables = true,
-    usePropertyOrdering = false,
-    hidePolymorphismTypeProperty = false,
-    disableWarnings = false,
     useMinLengthForNotNull = false,
     useTypeIdForDefinitionName = false,
     customType2FormatMapping = Map(),
@@ -101,55 +86,12 @@ object JsonSchemaConfig {
     jsonSuppliers = Map()
   )
 
-  // Java-API
-  def create(
-              autoGenerateTitleForProperties:Boolean,
-              defaultArrayFormat:Optional[String],
-              useOneOfForOption:Boolean,
-              useOneOfForNullables:Boolean,
-              usePropertyOrdering:Boolean,
-              hidePolymorphismTypeProperty:Boolean,
-              disableWarnings:Boolean,
-              useMinLengthForNotNull:Boolean,
-              useTypeIdForDefinitionName:Boolean,
-              customType2FormatMapping:java.util.Map[String, String],
-              useMultipleEditorSelectViaProperty:Boolean,
-              uniqueItemClasses:java.util.Set[Class[_]],
-              classTypeReMapping:java.util.Map[Class[_], Class[_]],
-              jsonSuppliers:java.util.Map[String, Supplier[JsonNode]]
-            ):JsonSchemaConfig = {
-
-    import scala.collection.JavaConverters._
-
-    JsonSchemaConfig(
-      autoGenerateTitleForProperties,
-      Option(defaultArrayFormat.orElse(null)),
-      useOneOfForOption,
-      useOneOfForNullables,
-      usePropertyOrdering,
-      hidePolymorphismTypeProperty,
-      disableWarnings,
-      useMinLengthForNotNull,
-      useTypeIdForDefinitionName,
-      customType2FormatMapping.asScala.toMap,
-      useMultipleEditorSelectViaProperty,
-      uniqueItemClasses.asScala.toSet,
-      classTypeReMapping.asScala.toMap,
-      jsonSuppliers.asScala.toMap
-    )
-  }
-
 }
 
-case class JsonSchemaConfig
-(
-  autoGenerateTitleForProperties:Boolean,
+case class JsonSchemaConfig(
   defaultArrayFormat:Option[String],
   useOneOfForOption:Boolean,
   useOneOfForNullables:Boolean,
-  usePropertyOrdering:Boolean,
-  hidePolymorphismTypeProperty:Boolean,
-  disableWarnings:Boolean,
   useMinLengthForNotNull:Boolean,
   useTypeIdForDefinitionName:Boolean,
   customType2FormatMapping:Map[String, String],
@@ -160,38 +102,22 @@ case class JsonSchemaConfig
 )
 
 
-
 /**
   * Json Schema Generator
   * @param rootObjectMapper pre-configured ObjectMapper
-  * @param debug Default = false - set to true if generator should log some debug info while generating the schema
   * @param config default = vanillaJsonSchemaDraft4. Please use html5EnabledSchema if generating HTML5 GUI, e.g. using https://github.com/jdorn/json-editor
   */
-class JsonSchemaGenerator
-(
-  val rootObjectMapper: ObjectMapper,
-  debug:Boolean = false,
-  config:JsonSchemaConfig = JsonSchemaConfig.vanillaJsonSchemaDraft4
-) {
+class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaConfig = JsonSchemaConfig.vanillaJsonSchemaDraft4) {
 
-  // Java API
-  def this(rootObjectMapper: ObjectMapper) = this(rootObjectMapper, false, JsonSchemaConfig.vanillaJsonSchemaDraft4)
-
-  // Java API
-  def this(rootObjectMapper: ObjectMapper, config:JsonSchemaConfig) = this(rootObjectMapper, false, config)
+  val logger = LoggerFactory.getLogger(classOf[JsonSchemaGenerator])
 
   import scala.collection.JavaConverters._
-
-  val log = LoggerFactory.getLogger(getClass)
 
   val dateFormatMapping = Map[String,String](
     // Java7 dates
     "java.time.LocalDateTime" -> "datetime-local",
     "java.time.OffsetDateTime" -> "datetime",
-    "java.time.LocalDate" -> "date",
-
-    // Joda-dates
-    "org.joda.time.LocalDate" -> "date"
+    "java.time.LocalDate" -> "date"
   )
 
   trait MySerializerProvider {
@@ -303,8 +229,7 @@ class JsonSchemaGenerator
 
   }
 
-  class MyJsonFormatVisitorWrapper
-  (
+  class MyJsonFormatVisitorWrapper(
     objectMapper: ObjectMapper,
     level:Int = 0,
     val node: ObjectNode = JsonNodeFactory.instance.objectNode(),
@@ -312,22 +237,14 @@ class JsonSchemaGenerator
     currentProperty:Option[BeanProperty] // This property may represent the BeanProperty when we're directly processing beneath the property
   ) extends JsonFormatVisitorWrapper with MySerializerProvider {
 
-    def l(s: => String): Unit = {
-      if (!debug) return
-
-      var indent = ""
-      for( i <- 0 until level) {
-        indent = indent + "  "
-      }
-      println(indent + s)
-    }
+    val logger = LoggerFactory.getLogger(classOf[MyJsonFormatVisitorWrapper])
 
     def createChild(childNode: ObjectNode, currentProperty:Option[BeanProperty]): MyJsonFormatVisitorWrapper = {
       new MyJsonFormatVisitorWrapper(objectMapper, level + 1, node = childNode, definitionsHandler = definitionsHandler, currentProperty = currentProperty)
     }
 
     override def expectStringFormat(_type: JavaType) = {
-      l(s"expectStringFormat - _type: ${_type}")
+      logger.debug(s"expectStringFormat - _type: ${_type}")
 
       node.put("type", "string")
 
@@ -393,7 +310,7 @@ class JsonSchemaGenerator
     }
 
     override def expectArrayFormat(_type: JavaType) = {
-      l(s"expectArrayFormat - _type: ${_type}")
+      logger.debug(s"expectArrayFormat - _type: ${_type}")
 
       node.put("type", "array")
 
@@ -429,19 +346,19 @@ class JsonSchemaGenerator
 
       new JsonArrayFormatVisitor with MySerializerProvider {
         override def itemsFormat(handler: JsonFormatVisitable, _elementType: JavaType): Unit = {
-          l(s"expectArrayFormat - handler: $handler - elementType: ${_elementType} - preferredElementType: $preferredElementType")
+          logger.debug(s"expectArrayFormat - handler: $handler - elementType: ${_elementType} - preferredElementType: $preferredElementType")
           objectMapper.acceptJsonFormatVisitor(tryToReMapType(preferredElementType), createChild(itemsNode, currentProperty = None))
         }
 
         override def itemsFormat(format: JsonFormatTypes): Unit = {
-          l(s"itemsFormat - format: $format")
+          logger.debug(s"itemsFormat - format: $format")
           itemsNode.put("type", format.value())
         }
       }
     }
 
     override def expectNumberFormat(_type: JavaType) = {
-      l("expectNumberFormat")
+      logger.debug("expectNumberFormat")
 
       node.put("type", "number")
 
@@ -467,7 +384,7 @@ class JsonSchemaGenerator
 
       new JsonNumberFormatVisitor  with EnumSupport {
         val _node = node
-        override def numberType(_type: NumberType): Unit = l(s"JsonNumberFormatVisitor.numberType: ${_type}")
+        override def numberType(_type: NumberType): Unit = logger.debug(s"JsonNumberFormatVisitor.numberType: ${_type}")
         override def format(format: JsonValueFormat): Unit = {
           setFormat(node, format.toString)
         }
@@ -475,18 +392,12 @@ class JsonSchemaGenerator
     }
 
     override def expectAnyFormat(_type: JavaType) = {
-      if (!config.disableWarnings) {
-        log.warn(s"Not able to generate jsonSchema-info for type: ${_type} - probably using custom serializer which does not override acceptJsonFormatVisitor")
-      }
-
-
-      new JsonAnyFormatVisitor {
-      }
-
+      logger.warn(s"Not able to generate jsonSchema-info for type: ${_type} - probably using custom serializer which does not override acceptJsonFormatVisitor")
+      new JsonAnyFormatVisitor {}
     }
 
     override def expectIntegerFormat(_type: JavaType) = {
-      l("expectIntegerFormat")
+      logger.debug("expectIntegerFormat")
 
       node.put("type", "integer")
 
@@ -513,7 +424,7 @@ class JsonSchemaGenerator
 
       new JsonIntegerFormatVisitor with EnumSupport {
         val _node = node
-        override def numberType(_type: NumberType): Unit = l(s"JsonIntegerFormatVisitor.numberType: ${_type}")
+        override def numberType(_type: NumberType): Unit = logger.debug(s"JsonIntegerFormatVisitor.numberType: ${_type}")
         override def format(format: JsonValueFormat): Unit = {
           setFormat(node, format.toString)
         }
@@ -521,13 +432,13 @@ class JsonSchemaGenerator
     }
 
     override def expectNullFormat(_type: JavaType) = {
-      l(s"expectNullFormat - _type: ${_type}")
+      logger.debug(s"expectNullFormat - _type: ${_type}")
       new JsonNullFormatVisitor {}
     }
 
 
     override def expectBooleanFormat(_type: JavaType) = {
-      l("expectBooleanFormat")
+      logger.debug("expectBooleanFormat")
 
       node.put("type", "boolean")
 
@@ -549,7 +460,7 @@ class JsonSchemaGenerator
     }
 
     override def expectMapFormat(_type: JavaType) = {
-      l(s"expectMapFormat - _type: ${_type}")
+      logger.debug(s"expectMapFormat - _type: ${_type}")
 
       // There is no way to specify map in jsonSchema,
       // So we're going to treat it as type=object with additionalProperties = true,
@@ -570,11 +481,11 @@ class JsonSchemaGenerator
 
       new JsonMapFormatVisitor with MySerializerProvider {
         override def keyFormat(handler: JsonFormatVisitable, keyType: JavaType): Unit = {
-          l(s"JsonMapFormatVisitor.keyFormat handler: $handler - keyType: $keyType")
+          logger.debug(s"JsonMapFormatVisitor.keyFormat handler: $handler - keyType: $keyType")
         }
 
         override def valueFormat(handler: JsonFormatVisitable, valueType: JavaType): Unit = {
-          l(s"JsonMapFormatVisitor.valueFormat handler: $handler - valueType: $valueType")
+          logger.debug(s"JsonMapFormatVisitor.valueFormat handler: $handler - valueType: $valueType")
         }
       }
     }
@@ -671,7 +582,7 @@ class JsonSchemaGenerator
     def tryToReMapType(originalClass: Class[_]):Class[_] = {
       config.classTypeReMapping.get(originalClass).map {
         mappedToClass:Class[_] =>
-          l(s"Class $originalClass is remapped to $mappedToClass")
+          logger.debug(s"Class $originalClass is remapped to $mappedToClass")
           mappedToClass
       }.getOrElse(originalClass)
     }
@@ -679,7 +590,7 @@ class JsonSchemaGenerator
     private def tryToReMapType(originalType: JavaType):JavaType = {
       val _type:JavaType = config.classTypeReMapping.get(originalType.getRawClass).map {
         mappedToClass:Class[_] =>
-          l(s"Class ${originalType.getRawClass} is remapped to $mappedToClass")
+          logger.debug(s"Class ${originalType.getRawClass} is remapped to $mappedToClass")
           val mappedToJavaType:JavaType = objectMapper.getTypeFactory.constructType(mappedToClass)
           mappedToJavaType
       }.getOrElse(originalType)
@@ -687,7 +598,7 @@ class JsonSchemaGenerator
       _type
     }
 
-    private def injectFromJsonSchemaInject(a:JsonSchemaInject, thisObjectNode:ObjectNode): Unit ={
+    private def injectFromJsonSchemaInject(a: JsonSchemaInject, thisObjectNode:ObjectNode): Unit ={
       // Must parse json
       val injectJsonNode = objectMapper.readTree(a.json())
       Option(a.jsonSupplier())
@@ -724,7 +635,7 @@ class JsonSchemaGenerator
 
         subTypes.foreach {
           subType: Class[_] =>
-            l(s"polymorphism - subType: $subType")
+            logger.debug(s"polymorphism - subType: $subType")
 
             val definitionInfo: DefinitionInfo = definitionsHandler.getOrCreateDefinition(subType){
               objectNode =>
@@ -817,12 +728,10 @@ class JsonSchemaGenerator
                 enumObjectNode.set("enum", enumValuesNode)
                 enumObjectNode.put("default", pi.subTypeName)
 
-                if (config.hidePolymorphismTypeProperty) {
-                  // Make sure the editor hides this polymorphism-specific property
-                  val optionsNode = JsonNodeFactory.instance.objectNode()
-                  enumObjectNode.set("options", optionsNode)
-                  optionsNode.put("hidden", true)
-                }
+                // Make sure the editor hides this polymorphism-specific property
+                val optionsNode = JsonNodeFactory.instance.objectNode()
+                enumObjectNode.set("options", optionsNode)
+                optionsNode.put("hidden", true)
 
                 propertiesNode.set(pi.typePropertyName, enumObjectNode)
 
@@ -851,12 +760,10 @@ class JsonSchemaGenerator
               var nextPropertyOrderIndex = 1
 
               def myPropertyHandler(propertyName:String, propertyType:JavaType, prop: Option[BeanProperty], jsonPropertyRequired:Boolean): Unit = {
-                l(s"JsonObjectFormatVisitor - ${propertyName}: ${propertyType}")
+                logger.debug(s"JsonObjectFormatVisitor - ${propertyName}: ${propertyType}")
 
                 if ( propertiesNode.get(propertyName) != null) {
-                  if (!config.disableWarnings) {
-                    log.warn(s"Ignoring property '$propertyName' in $propertyType since it has already been added, probably as type-property using polymorphism")
-                  }
+                  logger.warn(s"Ignoring property '$propertyName' in $propertyType since it has already been added, probably as type-property using polymorphism")
                   return
                 }
 
@@ -879,10 +786,8 @@ class JsonSchemaGenerator
                   val thisPropertyNode = JsonNodeFactory.instance.objectNode()
                   propertiesNode.set(propertyName, thisPropertyNode)
 
-                  if ( config.usePropertyOrdering ) {
-                    thisPropertyNode.put("propertyOrder", nextPropertyOrderIndex)
-                    nextPropertyOrderIndex = nextPropertyOrderIndex + 1
-                  }
+                  thisPropertyNode.put("propertyOrder", nextPropertyOrderIndex)
+                  nextPropertyOrderIndex += 1
 
                   // Figure out if the type is considered optional by either the Java or Scala.
                   val optionalType:Boolean = classOf[Option[_]].isAssignableFrom(propertyType.getRawClass) ||
@@ -965,10 +870,7 @@ class JsonSchemaGenerator
                     Option(p.getAnnotation(classOf[JsonSchemaTitle]))
                 }.map(_.value())
                   .orElse {
-                    if (config.autoGenerateTitleForProperties) {
-                      // We should generate 'pretty-name' based on propertyName
-                      Some(generateTitleFromPropertyName(propertyName))
-                    } else None
+                    None
                   }
                   .map {
                     title =>
@@ -1005,22 +907,22 @@ class JsonSchemaGenerator
               }
 
               override def optionalProperty(prop: BeanProperty): Unit = {
-                l(s"JsonObjectFormatVisitor.optionalProperty: prop:${prop}")
+                logger.debug(s"JsonObjectFormatVisitor.optionalProperty: prop:${prop}")
                 myPropertyHandler(prop.getName, prop.getType, Some(prop), jsonPropertyRequired = false)
               }
 
               override def optionalProperty(name: String, handler: JsonFormatVisitable, propertyTypeHint: JavaType): Unit = {
-                l(s"JsonObjectFormatVisitor.optionalProperty: name:${name} handler:${handler} propertyTypeHint:${propertyTypeHint}")
+                logger.debug(s"JsonObjectFormatVisitor.optionalProperty: name:${name} handler:${handler} propertyTypeHint:${propertyTypeHint}")
                 myPropertyHandler(name, propertyTypeHint, None, jsonPropertyRequired = false)
               }
 
               override def property(prop: BeanProperty): Unit = {
-                l(s"JsonObjectFormatVisitor.property: prop:${prop}")
+                logger.debug(s"JsonObjectFormatVisitor.property: prop:${prop}")
                 myPropertyHandler(prop.getName, prop.getType, Some(prop), jsonPropertyRequired = true)
               }
 
               override def property(name: String, handler: JsonFormatVisitable, propertyTypeHint: JavaType): Unit = {
-                l(s"JsonObjectFormatVisitor.property: name:${name} handler:${handler} propertyTypeHint:${propertyTypeHint}")
+                logger.debug(s"JsonObjectFormatVisitor.property: name:${name} handler:${handler} propertyTypeHint:${propertyTypeHint}")
                 myPropertyHandler(name, propertyTypeHint, None, jsonPropertyRequired = true)
               }
             })
@@ -1117,12 +1019,10 @@ class JsonSchemaGenerator
             clazz =>
               objectMapper.getTypeFactory.constructType(clazz)
           }
-      }.getOrElse( {
-        if (!config.disableWarnings) {
-          log.warn(s"$prop - Contained type is java.lang.Object and we're unable to extract its Type using fallback-approach looking for @JsonDeserialize")
-        }
+      }.getOrElse {
+        logger.warn(s"$prop - Contained type is java.lang.Object and we're unable to extract its Type using fallback-approach looking for @JsonDeserialize")
         containedType
-      })
+      }
 
     } else {
       // use containedType as is
@@ -1130,23 +1030,21 @@ class JsonSchemaGenerator
     }
   }
 
-  def generateJsonSchema[T <: Any](clazz: Class[T]): JsonNode = generateJsonSchema(clazz, None, None)
-  def generateJsonSchema[T <: Any](javaType: JavaType): JsonNode = generateJsonSchema(javaType, None, None)
+  def generateJsonSchema[T](clazz: Class[T]): JsonNode = generateJsonSchema(clazz, None, None)
+  def generateJsonSchema[T](javaType: JavaType): JsonNode = generateJsonSchema(javaType, None, None)
 
   // Java-API
-  def generateJsonSchema[T <: Any](clazz: Class[T], title:String, description:String): JsonNode = generateJsonSchema(clazz, Option(title), Option(description))
+  def generateJsonSchema[T](clazz: Class[T], title:String, description:String): JsonNode = generateJsonSchema(clazz, Option(title), Option(description))
   // Java-API
-  def generateJsonSchema[T <: Any](javaType: JavaType, title:String, description:String): JsonNode = generateJsonSchema(javaType, Option(title), Option(description))
+  def generateJsonSchema[T](javaType: JavaType, title:String, description:String): JsonNode = generateJsonSchema(javaType, Option(title), Option(description))
 
-  def generateJsonSchema[T <: Any](clazz: Class[T], title:Option[String], description:Option[String]): JsonNode = {
+  def generateJsonSchema[T](clazz: Class[T], title:Option[String], description:Option[String]): JsonNode = {
 
 
     def tryToReMapType(originalClass: Class[_]):Class[_] = {
       config.classTypeReMapping.get(originalClass).map {
         mappedToClass:Class[_] =>
-          if (debug) {
-            println(s"Class $originalClass is remapped to $mappedToClass")
-          }
+          logger.debug(s"Class $originalClass is remapped to $mappedToClass")
           mappedToClass
       }.getOrElse(originalClass)
     }

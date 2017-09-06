@@ -6,6 +6,5 @@ case class ManyDates
 (
   javaLocalDateTime:LocalDateTime,
   javaOffsetDateTime:OffsetDateTime,
-  javaLocalDate:LocalDate,
-  jodaLocalDate:org.joda.time.LocalDate
+  javaLocalDate:LocalDate
 )
