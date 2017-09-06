@@ -29,7 +29,6 @@ object JsonSchemaConfig {
     useMinLengthForNotNull = false,
     useTypeIdForDefinitionName = false,
     customType2FormatMapping = Map(),
-    useMultipleEditorSelectViaProperty = false,
     uniqueItemClasses = Set(),
     classTypeReMapping = Map()
   )
@@ -52,7 +51,6 @@ object JsonSchemaConfig {
       "java.time.OffsetDateTime" -> "datetime",
       "java.time.LocalDate" -> "date"
     ),
-    useMultipleEditorSelectViaProperty = true,
     uniqueItemClasses = Set(
       classOf[scala.collection.immutable.Set[_]],
       classOf[scala.collection.mutable.Set[_]],
@@ -77,7 +75,6 @@ object JsonSchemaConfig {
     useMinLengthForNotNull = false,
     useTypeIdForDefinitionName = false,
     customType2FormatMapping = Map(),
-    useMultipleEditorSelectViaProperty = false,
     uniqueItemClasses = Set(),
     classTypeReMapping = Map()
   )
@@ -91,7 +88,6 @@ case class JsonSchemaConfig(
   useMinLengthForNotNull:Boolean,
   useTypeIdForDefinitionName:Boolean,
   customType2FormatMapping:Map[String, String],
-  useMultipleEditorSelectViaProperty:Boolean, // https://github.com/jdorn/json-editor/issues/709
   uniqueItemClasses:Set[Class[_]], // If rendering array and type is instanceOf class in this set, then we add 'uniqueItems": true' to schema - See // https://github.com/jdorn/json-editor for more info
   classTypeReMapping:Map[Class[_], Class[_]] // Can be used to prevent rendering using polymorphism for specific classes.
 )
@@ -246,53 +242,46 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
       // Check if we should include minLength and/or maxLength
       case class MinAndMaxLength(minLength:Option[Int], maxLength:Option[Int])
 
-      val minAndMaxLength:Option[MinAndMaxLength] = currentProperty.flatMap {
-        p =>
-          // Look for @Pattern
-          Option(p.getAnnotation(classOf[Pattern])).map {
-            pattern =>
-              node.put("pattern", pattern.regexp())
-          }
+      val minAndMaxLength:Option[MinAndMaxLength] = currentProperty.flatMap { p =>
+        // Look for @Pattern
+        Option(p.getAnnotation(classOf[Pattern])).foreach { pattern =>
+          node.put("pattern", pattern.regexp())
+        }
 
-          // Look for @Pattern.List
-          Option(p.getAnnotation(classOf[Pattern.List])).map {
-            patterns => {
-              val regex = patterns.value().map(_.regexp).foldLeft("^")(_ + "(?=" + _ + ")").concat(".*$")
-              node.put("pattern", regex)
+        // Look for @Pattern.List
+        Option(p.getAnnotation(classOf[Pattern.List])).foreach { patterns => {
+            val regex = patterns.value().map(_.regexp).foldLeft("^")(_ + "(?=" + _ + ")").concat(".*$")
+            node.put("pattern", regex)
+          }
+        }
+
+        // Look for @JsonSchemaDefault
+        Option(p.getAnnotation(classOf[JsonSchemaDefault])).foreach { defaultValue =>
+          node.put("default", defaultValue.value())
+        }
+
+        // Look for @Size
+        Option(p.getAnnotation(classOf[Size])).map { size =>
+          (size.min, size.max) match {
+            case (0, max)                 => MinAndMaxLength(None, Some(max))
+            case (min, Integer.MAX_VALUE) => MinAndMaxLength(Some(min), None)
+            case (min, max)               => MinAndMaxLength(Some(min), Some(max))
+          }
+        } orElse {
+          // We did not find @Size - check if we should include it anyway
+          if (config.useMinLengthForNotNull) {
+            Option(p.getAnnotation(classOf[NotNull])).map { notNull =>
+              MinAndMaxLength(Some(1), None)
             }
+          } else {
+            None
           }
-
-          // Look for @JsonSchemaDefault
-          Option(p.getAnnotation(classOf[JsonSchemaDefault])).map {
-            defaultValue =>
-              node.put("default", defaultValue.value())
-          }
-
-          // Look for @Size
-          Option(p.getAnnotation(classOf[Size]))
-              .map {
-                size =>
-                  (size.min(), size.max()) match {
-                    case (0, max)                 => MinAndMaxLength(None, Some(max))
-                    case (min, Integer.MAX_VALUE) => MinAndMaxLength(Some(min), None)
-                    case (min, max)               => MinAndMaxLength(Some(min), Some(max))
-                  }
-              }
-              .orElse {
-                // We did not find @Size - check if we should include it anyway
-                if (config.useMinLengthForNotNull) {
-                  Option(p.getAnnotation(classOf[NotNull])).map {
-                    notNull =>
-                      MinAndMaxLength(Some(1), None)
-                  }
-                } else None
-              }
+        }
       }
 
-      minAndMaxLength.map {
-        minAndMax:MinAndMaxLength =>
-          minAndMax.minLength.map( length => node.put("minLength", length) )
-          minAndMax.maxLength.map( length => node.put("maxLength", length) )
+      minAndMaxLength.foreach { minAndMax: MinAndMaxLength =>
+        minAndMax.minLength.foreach(length => node.put("minLength", length))
+        minAndMax.maxLength.foreach(length => node.put("maxLength", length))
       }
 
       new JsonStringFormatVisitor with EnumSupport {
@@ -315,19 +304,17 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
         setFormat(node, "checkbox")
       } else {
         // Try to set default format
-        config.defaultArrayFormat.foreach {
-          format => setFormat(node, format)
+        config.defaultArrayFormat.foreach { format =>
+          setFormat(node, format)
         }
       }
 
       // Look for @Size
-      currentProperty.map {
-        p =>
-          Option(p.getAnnotation(classOf[Size])).map {
-            size =>
-              node.put("minItems", size.min())
-              node.put("maxItems", size.max())
-          }
+      currentProperty.foreach { p =>
+        Option(p.getAnnotation(classOf[Size])).foreach { size =>
+          node.put("minItems", size.min())
+          node.put("maxItems", size.max())
+        }
       }
 
 
@@ -337,7 +324,7 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
       // We get improved result while processing scala-collections by getting elementType this way
       // instead of using the one which we receive in JsonArrayFormatVisitor.itemsFormat
       // This approach also works for Java
-      val preferredElementType:JavaType = _type.getContentType
+      val preferredElementType: JavaType = _type.getContentType
 
       new JsonArrayFormatVisitor with MySerializerProvider {
         override def itemsFormat(handler: JsonFormatVisitable, _elementType: JavaType): Unit = {
@@ -358,31 +345,31 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
       node.put("type", "number")
 
       // Look for @Min, @Max => minumum, maximum
-      currentProperty.map {
-        p =>
-          Option(p.getAnnotation(classOf[Min])).map {
-            min =>
-              node.put("minimum", min.value())
-          }
+      currentProperty.foreach { p =>
+        putMinMax(p)
 
-          Option(p.getAnnotation(classOf[Max])).map {
-            max =>
-              node.put("maximum", max.value())
-          }
-
-          // Look for @JsonSchemaDefault
-          Option(p.getAnnotation(classOf[JsonSchemaDefault])).map {
-            defaultValue =>
-              node.put("default", defaultValue.value().toLong )
-          }
+        // Look for @JsonSchemaDefault
+        Option(p.getAnnotation(classOf[JsonSchemaDefault])).foreach { defaultValue =>
+          node.put("default", defaultValue.value().toLong)
+        }
       }
 
-      new JsonNumberFormatVisitor  with EnumSupport {
+      new JsonNumberFormatVisitor with EnumSupport {
         val _node = node
         override def numberType(_type: NumberType): Unit = logger.debug(s"JsonNumberFormatVisitor.numberType: ${_type}")
         override def format(format: JsonValueFormat): Unit = {
           setFormat(node, format.toString)
         }
+      }
+    }
+
+    private def putMinMax(p: BeanProperty) = {
+      Option(p.getAnnotation(classOf[Min])).foreach { min =>
+        node.put("minimum", min.value())
+      }
+
+      Option(p.getAnnotation(classOf[Max])).foreach { max =>
+        node.put("maximum", max.value())
       }
     }
 
@@ -397,23 +384,13 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
       node.put("type", "integer")
 
       // Look for @Min, @Max => minumum, maximum
-      currentProperty.map {
-        p =>
-          Option(p.getAnnotation(classOf[Min])).map {
-            min =>
-              node.put("minimum", min.value())
-          }
+      currentProperty.foreach { p =>
+        putMinMax(p)
 
-          Option(p.getAnnotation(classOf[Max])).map {
-            max =>
-              node.put("maximum", max.value())
-          }
-
-          // Look for @JsonSchemaDefault
-          Option(p.getAnnotation(classOf[JsonSchemaDefault])).map {
-            defaultValue =>
-              node.put("default", defaultValue.value().toInt)
-          }
+        // Look for @JsonSchemaDefault
+        Option(p.getAnnotation(classOf[JsonSchemaDefault])).foreach { defaultValue =>
+          node.put("default", defaultValue.value().toInt)
+        }
       }
 
 
@@ -437,13 +414,11 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
 
       node.put("type", "boolean")
 
-      currentProperty.map {
-        p =>
-          // Look for @JsonSchemaDefault
-          Option(p.getAnnotation(classOf[JsonSchemaDefault])).map {
-            defaultValue =>
-              node.put("default", defaultValue.value().toBoolean)
-          }
+      currentProperty.foreach { p =>
+        // Look for @JsonSchemaDefault
+        Option(p.getAnnotation(classOf[JsonSchemaDefault])).foreach { defaultValue =>
+          node.put("default", defaultValue.value().toBoolean)
+        }
       }
 
       new JsonBooleanFormatVisitor with EnumSupport {
@@ -472,7 +447,6 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
       val childVisitor = createChild(additionalPropsObject, None)
       objectMapper.acceptJsonFormatVisitor(tryToReMapType(_type.containedType(1)), childVisitor)
       definitionsHandler.popworkInProgress()
-
 
       new JsonMapFormatVisitor with MySerializerProvider {
         override def keyFormat(handler: JsonFormatVisitable, keyType: JavaType): Unit = {
@@ -574,11 +548,10 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
       }.getOrElse(List())
     }
 
-    def tryToReMapType(originalClass: Class[_]):Class[_] = {
-      config.classTypeReMapping.get(originalClass).map {
-        mappedToClass:Class[_] =>
-          logger.debug(s"Class $originalClass is remapped to $mappedToClass")
-          mappedToClass
+    def tryToReMapType(originalClass: Class[_]): Class[_] = {
+      config.classTypeReMapping.get(originalClass).map { mappedToClass:Class[_] =>
+        logger.debug(s"Class $originalClass is remapped to $mappedToClass")
+        mappedToClass
       }.getOrElse(originalClass)
     }
 
@@ -603,29 +576,25 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
         val anyOfArrayNode = JsonNodeFactory.instance.arrayNode()
         node.set("oneOf", anyOfArrayNode)
 
-        subTypes.foreach {
-          subType: Class[_] =>
-            logger.debug(s"polymorphism - subType: $subType")
+        subTypes.foreach { subType: Class[_] =>
+          logger.debug(s"polymorphism - subType: $subType")
 
-            val definitionInfo: DefinitionInfo = definitionsHandler.getOrCreateDefinition(subType){
-              objectNode =>
+          val definitionInfo: DefinitionInfo = definitionsHandler.getOrCreateDefinition(subType){
+            objectNode =>
+              val childVisitor = createChild(objectNode, currentProperty = None)
+              objectMapper.acceptJsonFormatVisitor(tryToReMapType(subType), childVisitor)
+              None
+          }
 
-                val childVisitor = createChild(objectNode, currentProperty = None)
-                objectMapper.acceptJsonFormatVisitor(tryToReMapType(subType), childVisitor)
+          val thisOneOfNode = JsonNodeFactory.instance.objectNode()
+          thisOneOfNode.put("$ref", definitionInfo.ref.get)
 
-                None
-            }
+          // If class is annotated with JsonSchemaTitle, we should add it
+          Option(subType.getDeclaredAnnotation(classOf[JsonSchemaTitle])).map(_.value()).foreach { title =>
+            putTitle(thisOneOfNode, title)
+          }
 
-            val thisOneOfNode = JsonNodeFactory.instance.objectNode()
-            thisOneOfNode.put("$ref", definitionInfo.ref.get)
-
-            // If class is annotated with JsonSchemaTitle, we should add it
-            Option(subType.getDeclaredAnnotation(classOf[JsonSchemaTitle])).map(_.value()).foreach {
-              title =>
-                thisOneOfNode.put("title", title)
-            }
-
-            anyOfArrayNode.add(thisOneOfNode)
+          anyOfArrayNode.add(thisOneOfNode)
 
         }
 
@@ -634,262 +603,221 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
       } else {
         // We do not have subtypes
 
-        val objectBuilder:ObjectNode => Option[JsonObjectFormatVisitor] = {
-          thisObjectNode:ObjectNode =>
+        val objectBuilder:ObjectNode => Option[JsonObjectFormatVisitor] = { thisObjectNode: ObjectNode =>
 
-            thisObjectNode.put("type", "object")
-            thisObjectNode.put("additionalProperties", false)
+          thisObjectNode.put("type", "object")
+          thisObjectNode.put("additionalProperties", false)
 
-            // If class is annotated with JsonSchemaFormat, we should add it
-            val ac = AnnotatedClass.construct(_type, objectMapper.getDeserializationConfig())
-            resolvePropertyFormat(_type, objectMapper).foreach {
-              format =>
-                setFormat(thisObjectNode, format)
+          // If class is annotated with JsonSchemaFormat, we should add it
+          val ac = AnnotatedClass.construct(_type, objectMapper.getDeserializationConfig())
+          resolvePropertyFormat(_type, objectMapper).foreach { format =>
+            setFormat(thisObjectNode, format)
+          }
+
+          // If class is annotated with JsonSchemaDescription, we should add it
+          Option(ac.getAnnotations.get(classOf[JsonSchemaDescription])).map(_.value())
+            .orElse(Option(ac.getAnnotations.get(classOf[JsonPropertyDescription])).map(_.value))
+            .foreach { description: String =>
+              thisObjectNode.put("description", description)
             }
 
-            // If class is annotated with JsonSchemaDescription, we should add it
-            Option(ac.getAnnotations.get(classOf[JsonSchemaDescription])).map(_.value())
-              .orElse(Option(ac.getAnnotations.get(classOf[JsonPropertyDescription])).map(_.value))
-              .foreach {
-                description: String =>
-                  thisObjectNode.put("description", description)
+          // If class is annotated with JsonSchemaTitle, we should add it
+          Option(ac.getAnnotations.get(classOf[JsonSchemaTitle])).map(_.value()).foreach { title =>
+            putTitle(thisObjectNode, title)
+          }
+
+          // If class is annotated with JsonSchemaOptions, we should add it
+          Option(ac.getAnnotations.get(classOf[JsonSchemaOptions])).map(_.items()).foreach { items =>
+            val optionsNode = getOptionsNode(thisObjectNode)
+            items.foreach { item =>
+              optionsNode.put(item.name, item.value)
+            }
+          }
+
+          val propertiesNode = JsonNodeFactory.instance.objectNode()
+          thisObjectNode.set("properties", propertiesNode)
+
+          extractPolymorphismInfo(_type).map { pi =>
+            // This class is a child in a polymorphism config..
+            // Set the title = subTypeName
+            putTitle(thisObjectNode, pi.subTypeName)
+
+            // must inject the 'type'-param and value as enum with only one possible value
+            // This is done to make sure the json generated from the schema using this oneOf
+            // contains the correct "type info"
+            val enumValuesNode = JsonNodeFactory.instance.arrayNode()
+            enumValuesNode.add(pi.subTypeName)
+
+            val enumObjectNode = JsonNodeFactory.instance.objectNode()
+            enumObjectNode.put("type", "string")
+            enumObjectNode.set("enum", enumValuesNode)
+            enumObjectNode.put("default", pi.subTypeName)
+
+            // Make sure the editor hides this polymorphism-specific property
+            val optionsNode = JsonNodeFactory.instance.objectNode()
+            enumObjectNode.set("options", optionsNode)
+            optionsNode.put("hidden", true)
+
+            propertiesNode.set(pi.typePropertyName, enumObjectNode)
+
+            getRequiredArrayNode(thisObjectNode).add(pi.typePropertyName)
+          }
+
+          Some(new JsonObjectFormatVisitor with MySerializerProvider {
+
+            // Used when rendering schema using propertyOrdering as specified here:
+            // https://github.com/jdorn/json-editor#property-ordering
+            var nextPropertyOrderIndex = 1
+
+            def myPropertyHandler(propertyName:String, propertyType:JavaType, prop: Option[BeanProperty], jsonPropertyRequired:Boolean): Unit = {
+              logger.debug(s"JsonObjectFormatVisitor - ${propertyName}: ${propertyType}")
+
+              if ( propertiesNode.get(propertyName) != null) {
+                logger.warn(s"Ignoring property '$propertyName' in $propertyType since it has already been added, probably as type-property using polymorphism")
+                return
               }
 
-            // If class is annotated with JsonSchemaTitle, we should add it
-            Option(ac.getAnnotations.get(classOf[JsonSchemaTitle])).map(_.value()).foreach {
-              title =>
-                thisObjectNode.put("title", title)
-            }
+              // Need to check for Option/Optional-special-case before we know what node to use here.
+              case class PropertyNode(main:ObjectNode, meta:ObjectNode)
 
-            // If class is annotated with JsonSchemaOptions, we should add it
-            Option(ac.getAnnotations.get(classOf[JsonSchemaOptions])).map(_.items()).foreach {
-              items =>
-                val optionsNode = getOptionsNode(thisObjectNode)
-                items.foreach {
-                  item =>
-                    optionsNode.put(item.name, item.value)
-                }
-            }
+              // Check if we should set this property as required
+              val rawClass = propertyType.getRawClass
 
-            val propertiesNode = JsonNodeFactory.instance.objectNode()
-            thisObjectNode.set("properties", propertiesNode)
+              val requiredProperty = rawClass.isPrimitive ||
+                  jsonPropertyRequired ||
+                  prop.isDefined && prop.get.getAnnotation(classOf[NotNull]) != null
 
-            extractPolymorphismInfo(_type).map {
-              case pi:PolymorphismInfo =>
-                // This class is a child in a polymorphism config..
-                // Set the title = subTypeName
-                thisObjectNode.put("title", pi.subTypeName)
+              val thisPropertyNode:PropertyNode = {
+                val thisPropertyNode = JsonNodeFactory.instance.objectNode()
+                propertiesNode.set(propertyName, thisPropertyNode)
 
-                // must inject the 'type'-param and value as enum with only one possible value
-                // This is done to make sure the json generated from the schema using this oneOf
-                // contains the correct "type info"
-                val enumValuesNode = JsonNodeFactory.instance.arrayNode()
-                enumValuesNode.add(pi.subTypeName)
+                thisPropertyNode.put("propertyOrder", nextPropertyOrderIndex)
+                nextPropertyOrderIndex += 1
 
-                val enumObjectNode = JsonNodeFactory.instance.objectNode()
-                enumObjectNode.put("type", "string")
-                enumObjectNode.set("enum", enumValuesNode)
-                enumObjectNode.put("default", pi.subTypeName)
+                // Figure out if the type is considered optional by either the Java or Scala.
+                val optionalType:Boolean = classOf[Option[_]].isAssignableFrom(propertyType.getRawClass) ||
+                                           classOf[Optional[_]].isAssignableFrom(propertyType.getRawClass)
 
-                // Make sure the editor hides this polymorphism-specific property
-                val optionsNode = JsonNodeFactory.instance.objectNode()
-                enumObjectNode.set("options", optionsNode)
-                optionsNode.put("hidden", true)
+                // If the property is not required, and our configuration allows it, let's go ahead and mark the type as nullable.
+                if (!requiredProperty && ((config.useOneOfForOption && optionalType) ||
+                                          (config.useOneOfForNullables && !optionalType))) {
+                  // We support this type being null, insert a oneOf consisting of a sentinel "null" and the real type.
+                  val oneOfArray = JsonNodeFactory.instance.arrayNode()
+                  thisPropertyNode.set("oneOf", oneOfArray)
 
-                propertiesNode.set(pi.typePropertyName, enumObjectNode)
+                  // Create our sentinel "null" value for the case no value is provided.
+                  val oneOfNull = JsonNodeFactory.instance.objectNode()
+                  oneOfNull.put("type", "null")
+                  putTitle(oneOfNull, "Not included")
+                  oneOfArray.add(oneOfNull)
 
-                getRequiredArrayNode(thisObjectNode).add(pi.typePropertyName)
+                  // If our nullable/optional type has a value, it'll be this.
+                  val oneOfReal = JsonNodeFactory.instance.objectNode()
+                  oneOfArray.add(oneOfReal)
 
-                if(config.useMultipleEditorSelectViaProperty) {
-                  // https://github.com/jdorn/json-editor/issues/709
-                  // Generate info to help generated editor to select correct oneOf-type
-                  // when populating the gui/schema with existing data
-                  val multipleEditorSelectViaPropertyNode = JsonNodeFactory.instance.objectNode()
-                  multipleEditorSelectViaPropertyNode.put("property", pi.typePropertyName)
-                  multipleEditorSelectViaPropertyNode.put("value", pi.subTypeName)
-
-                  val objectOptionsNode = JsonNodeFactory.instance.objectNode()
-                  objectOptionsNode.set("multiple_editor_select_via_property", multipleEditorSelectViaPropertyNode)
-                  thisObjectNode.set("options", objectOptionsNode)
-                }
-
-            }
-
-            Some(new JsonObjectFormatVisitor with MySerializerProvider {
-
-
-              // Used when rendering schema using propertyOrdering as specified here:
-              // https://github.com/jdorn/json-editor#property-ordering
-              var nextPropertyOrderIndex = 1
-
-              def myPropertyHandler(propertyName:String, propertyType:JavaType, prop: Option[BeanProperty], jsonPropertyRequired:Boolean): Unit = {
-                logger.debug(s"JsonObjectFormatVisitor - ${propertyName}: ${propertyType}")
-
-                if ( propertiesNode.get(propertyName) != null) {
-                  logger.warn(s"Ignoring property '$propertyName' in $propertyType since it has already been added, probably as type-property using polymorphism")
-                  return
-                }
-
-                // Need to check for Option/Optional-special-case before we know what node to use here.
-                case class PropertyNode(main:ObjectNode, meta:ObjectNode)
-
-                // Check if we should set this property as required
-                val rawClass = propertyType.getRawClass
-                val requiredProperty:Boolean = if (rawClass.isPrimitive) {
-                  // primitive types MUST have a value
-                  true
-                } else if(jsonPropertyRequired || prop.isDefined && prop.get.getAnnotation(classOf[NotNull]) != null) {
-                  // Has a @JsonProperty has "required" set to true, or is marked @NotNull
-                  true
+                  // Return oneOfReal which, from now on, will be used as the node representing this property
+                  PropertyNode(oneOfReal, thisPropertyNode)
                 } else {
-                  false
+                  // Our type must not be null: primitives, @NotNull annotations, @JsonProperty annotations marked required etc.
+                  PropertyNode(thisPropertyNode, thisPropertyNode)
                 }
-
-                val thisPropertyNode:PropertyNode = {
-                  val thisPropertyNode = JsonNodeFactory.instance.objectNode()
-                  propertiesNode.set(propertyName, thisPropertyNode)
-
-                  thisPropertyNode.put("propertyOrder", nextPropertyOrderIndex)
-                  nextPropertyOrderIndex += 1
-
-                  // Figure out if the type is considered optional by either the Java or Scala.
-                  val optionalType:Boolean = classOf[Option[_]].isAssignableFrom(propertyType.getRawClass) ||
-                                             classOf[Optional[_]].isAssignableFrom(propertyType.getRawClass)
-
-                  // If the property is not required, and our configuration allows it, let's go ahead and mark the type as nullable.
-                  if (!requiredProperty && ((config.useOneOfForOption && optionalType) ||
-                                            (config.useOneOfForNullables && !optionalType))) {
-                    // We support this type being null, insert a oneOf consisting of a sentinel "null" and the real type.
-                    val oneOfArray = JsonNodeFactory.instance.arrayNode()
-                    thisPropertyNode.set("oneOf", oneOfArray)
-
-                    // Create our sentinel "null" value for the case no value is provided.
-                    val oneOfNull = JsonNodeFactory.instance.objectNode()
-                    oneOfNull.put("type", "null")
-                    oneOfNull.put("title", "Not included")
-                    oneOfArray.add(oneOfNull)
-
-                    // If our nullable/optional type has a value, it'll be this.
-                    val oneOfReal = JsonNodeFactory.instance.objectNode()
-                    oneOfArray.add(oneOfReal)
-
-                    // Return oneOfReal which, from now on, will be used as the node representing this property
-                    PropertyNode(oneOfReal, thisPropertyNode)
-                  } else {
-                    // Our type must not be null: primitives, @NotNull annotations, @JsonProperty annotations marked required etc.
-                    PropertyNode(thisPropertyNode, thisPropertyNode)
-                  }
-                }
-
-                // Continue processing this property
-                val childVisitor = createChild(thisPropertyNode.main, currentProperty = prop)
-
-
-                // Push current work in progress since we're about to start working on a new class
-                definitionsHandler.pushWorkInProgress()
-
-                if( (classOf[Option[_]].isAssignableFrom(propertyType.getRawClass) || classOf[Optional[_]].isAssignableFrom(propertyType.getRawClass) ) && propertyType.containedTypeCount() >= 1) {
-
-                  // Property is scala Option or Java Optional.
-                  //
-                  // Due to Java's Type Erasure, the type behind Option is lost.
-                  // To workaround this, we use the same workaround as jackson-scala-module described here:
-                  // https://github.com/FasterXML/jackson-module-scala/wiki/FAQ#deserializing-optionint-and-other-primitive-challenges
-
-                  val optionType:JavaType = resolveType(propertyType, prop, objectMapper)
-
-                  objectMapper.acceptJsonFormatVisitor( tryToReMapType(optionType), childVisitor)
-
-                } else {
-                  objectMapper.acceptJsonFormatVisitor( tryToReMapType(propertyType), childVisitor)
-                }
-
-                // Pop back the work we were working on..
-                definitionsHandler.popworkInProgress()
-
-                prop.flatMap( resolvePropertyFormat(_) ).foreach {
-                  format =>
-                    setFormat(thisPropertyNode.main, format)
-                }
-
-                // Optionally add description
-                prop.flatMap {
-                  p: BeanProperty =>
-                    Option(p.getAnnotation(classOf[JsonSchemaDescription])).map(_.value())
-                      .orElse(Option(p.getAnnotation(classOf[JsonPropertyDescription])).map(_.value()))
-                }.map {
-                  description =>
-                    thisPropertyNode.meta.put("description", description)
-                }
-
-                // If this property is required, add it to our array of required properties.
-                if (requiredProperty) {
-                  getRequiredArrayNode(thisObjectNode).add(propertyName)
-                }
-
-                // Optionally add title
-                prop.flatMap {
-                  p:BeanProperty =>
-                    Option(p.getAnnotation(classOf[JsonSchemaTitle]))
-                }.map(_.value())
-                  .orElse {
-                    None
-                  }
-                  .map {
-                    title =>
-                      thisPropertyNode.meta.put("title", title)
-                  }
-
-                // Optionally add options
-                prop.flatMap {
-                  p:BeanProperty =>
-                    Option(p.getAnnotation(classOf[JsonSchemaOptions]))
-                }.map(_.items()).foreach {
-                  items =>
-                    val optionsNode = getOptionsNode(thisPropertyNode.meta)
-                    items.foreach {
-                      item =>
-                        optionsNode.put(item.name, item.value)
-
-                    }
-                }
-
               }
 
-              override def optionalProperty(prop: BeanProperty): Unit = {
-                logger.debug(s"JsonObjectFormatVisitor.optionalProperty: prop:${prop}")
-                myPropertyHandler(prop.getName, prop.getType, Some(prop), jsonPropertyRequired = false)
+              // Continue processing this property
+              val childVisitor = createChild(thisPropertyNode.main, currentProperty = prop)
+
+
+              // Push current work in progress since we're about to start working on a new class
+              definitionsHandler.pushWorkInProgress()
+
+              if( (classOf[Option[_]].isAssignableFrom(propertyType.getRawClass) || classOf[Optional[_]].isAssignableFrom(propertyType.getRawClass) ) && propertyType.containedTypeCount() >= 1) {
+
+                // Property is scala Option or Java Optional.
+                //
+                // Due to Java's Type Erasure, the type behind Option is lost.
+                // To workaround this, we use the same workaround as jackson-scala-module described here:
+                // https://github.com/FasterXML/jackson-module-scala/wiki/FAQ#deserializing-optionint-and-other-primitive-challenges
+
+                val optionType:JavaType = resolveType(propertyType, prop, objectMapper)
+                objectMapper.acceptJsonFormatVisitor( tryToReMapType(optionType), childVisitor)
+
+              } else {
+                objectMapper.acceptJsonFormatVisitor( tryToReMapType(propertyType), childVisitor)
               }
 
-              override def optionalProperty(name: String, handler: JsonFormatVisitable, propertyTypeHint: JavaType): Unit = {
-                logger.debug(s"JsonObjectFormatVisitor.optionalProperty: name:${name} handler:${handler} propertyTypeHint:${propertyTypeHint}")
-                myPropertyHandler(name, propertyTypeHint, None, jsonPropertyRequired = false)
+              // Pop back the work we were working on..
+              definitionsHandler.popworkInProgress()
+
+              prop.flatMap( resolvePropertyFormat(_) ).foreach { format =>
+                setFormat(thisPropertyNode.main, format)
               }
 
-              override def property(prop: BeanProperty): Unit = {
-                logger.debug(s"JsonObjectFormatVisitor.property: prop:${prop}")
-                myPropertyHandler(prop.getName, prop.getType, Some(prop), jsonPropertyRequired = true)
+              // Optionally add description
+              prop.flatMap { p: BeanProperty =>
+                Option(p.getAnnotation(classOf[JsonSchemaDescription])).map(_.value())
+                  .orElse(Option(p.getAnnotation(classOf[JsonPropertyDescription])).map(_.value()))
+              }.foreach { description =>
+                thisPropertyNode.meta.put("description", description)
               }
 
-              override def property(name: String, handler: JsonFormatVisitable, propertyTypeHint: JavaType): Unit = {
-                logger.debug(s"JsonObjectFormatVisitor.property: name:${name} handler:${handler} propertyTypeHint:${propertyTypeHint}")
-                myPropertyHandler(name, propertyTypeHint, None, jsonPropertyRequired = true)
+              // If this property is required, add it to our array of required properties.
+              if (requiredProperty) {
+                getRequiredArrayNode(thisObjectNode).add(propertyName)
               }
-            })
+
+              // Optionally add title
+              prop.flatMap {
+                p:BeanProperty =>
+                  Option(p.getAnnotation(classOf[JsonSchemaTitle]))
+              }.map(_.value())
+                .foreach { title =>
+                  putTitle(thisPropertyNode.meta, title)
+                }
+
+              // Optionally add options
+              prop.flatMap { p: BeanProperty =>
+                Option(p.getAnnotation(classOf[JsonSchemaOptions]))
+              }.map(_.items())
+              .foreach { items =>
+                val optionsNode = getOptionsNode(thisPropertyNode.meta)
+                items.foreach { item =>
+                  optionsNode.put(item.name, item.value)
+                }
+              }
+
+            }
+
+            override def optionalProperty(prop: BeanProperty): Unit = {
+              logger.debug(s"JsonObjectFormatVisitor.optionalProperty: prop:${prop}")
+              myPropertyHandler(prop.getName, prop.getType, Some(prop), jsonPropertyRequired = false)
+            }
+
+            override def optionalProperty(name: String, handler: JsonFormatVisitable, propertyTypeHint: JavaType): Unit = {
+              logger.debug(s"JsonObjectFormatVisitor.optionalProperty: name:${name} handler:${handler} propertyTypeHint:${propertyTypeHint}")
+              myPropertyHandler(name, propertyTypeHint, None, jsonPropertyRequired = false)
+            }
+
+            override def property(prop: BeanProperty): Unit = {
+              logger.debug(s"JsonObjectFormatVisitor.property: prop:${prop}")
+              myPropertyHandler(prop.getName, prop.getType, Some(prop), jsonPropertyRequired = true)
+            }
+
+            override def property(name: String, handler: JsonFormatVisitable, propertyTypeHint: JavaType): Unit = {
+              logger.debug(s"JsonObjectFormatVisitor.property: name:${name} handler:${handler} propertyTypeHint:${propertyTypeHint}")
+              myPropertyHandler(name, propertyTypeHint, None, jsonPropertyRequired = true)
+            }
+          })
         }
 
-        if ( level == 0) {
+        if (level == 0) {
           // This is the first level - we must not use definitions
           objectBuilder(node).orNull
         } else {
           val definitionInfo: DefinitionInfo = definitionsHandler.getOrCreateDefinition(_type.getRawClass)(objectBuilder)
-
-          definitionInfo.ref.foreach {
-            r =>
-              // Must add ref to def at "this location"
-              node.put("$ref", r)
+          definitionInfo.ref.foreach { r =>
+            // Must add ref to def at "this location"
+            node.put("$ref", r)
           }
-
           definitionInfo.jsonObjectFormatVisitor.orNull
         }
 
@@ -897,6 +825,11 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
 
     }
 
+
+  }
+
+  private def putTitle(node: ObjectNode, title: String) = {
+    node.put("title", title)
   }
 
   private def merge(mainNode:JsonNode, updateNode:JsonNode):Unit = {
@@ -1004,8 +937,8 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
       // Skip it if specified to empty string
       if (title.isEmpty) None else Some(title)
     }.foreach { title =>
-        rootNode.put("title", title)
-        // If root class is annotated with @JsonSchemaTitle, it will later override this title
+      putTitle(rootNode, title)
+      // If root class is annotated with @JsonSchemaTitle, it will later override this title
     }
 
     // Maybe set schema description

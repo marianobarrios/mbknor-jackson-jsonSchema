@@ -145,11 +145,6 @@ class JsonSchemaGeneratorTest extends FunSuite with Matchers {
 
     if (html5Checks) {
       assert(node.at(s"/properties/$typeParamName/options/hidden").asBoolean())
-      assert(node.at(s"/options/multiple_editor_select_via_property/property").asText() == typeParamName)
-      assert(node.at(s"/options/multiple_editor_select_via_property/value").asText() == typeName)
-    } else {
-      assert(node.at(s"/options/multiple_editor_select_via_property/property").isInstanceOf[MissingNode])
-
     }
   }
 
