@@ -597,10 +597,8 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
 
       val subTypes: List[Class[_]] = extractSubTypes(_type)
 
-      // Check if we have subtypes
       if (subTypes.nonEmpty) {
         // We have subtypes
-        //l(s"polymorphism - subTypes: $subTypes")
 
         val anyOfArrayNode = JsonNodeFactory.instance.arrayNode()
         node.set("oneOf", anyOfArrayNode)
@@ -922,21 +920,6 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
     }
   }
 
-  def generateTitleFromPropertyName(propertyName:String):String = {
-    // Code found here: http://stackoverflow.com/questions/2559759/how-do-i-convert-camelcase-into-human-readable-names-in-java
-    val s = propertyName.replaceAll(
-      String.format("%s|%s|%s",
-        "(?<=[A-Z])(?=[A-Z][a-z])",
-        "(?<=[^A-Z])(?=[A-Z])",
-        "(?<=[A-Za-z])(?=[^A-Za-z])"
-      ),
-      " "
-    )
-
-    // Make the first letter uppercase
-    s.substring(0,1).toUpperCase() + s.substring(1)
-  }
-
   def resolvePropertyFormat(_type: JavaType, objectMapper:ObjectMapper):Option[String] = {
     val ac = AnnotatedClass.construct(_type, objectMapper.getDeserializationConfig())
     resolvePropertyFormat(Option(ac.getAnnotation(classOf[JsonSchemaFormat])), _type.getRawClass.getName)
@@ -1015,32 +998,25 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
 
     // Specify that this is a v4 json schema
     rootNode.put("$schema", JsonSchemaGenerator.JSON_SCHEMA_DRAFT_4_URL)
-    //rootNode.put("id", "http://my.site/myschema#")
 
     // Add schema title
-    title.orElse {
-      Some(generateTitleFromPropertyName(javaType.getRawClass.getSimpleName))
-    }.flatMap {
-      title =>
-        // Skip it if specified to empty string
-        if ( title.isEmpty) None else Some(title)
-    }.map {
-      title =>
+    title.flatMap { title =>
+      // Skip it if specified to empty string
+      if (title.isEmpty) None else Some(title)
+    }.foreach { title =>
         rootNode.put("title", title)
         // If root class is annotated with @JsonSchemaTitle, it will later override this title
     }
 
     // Maybe set schema description
-    description.map {
+    description.foreach {
       d =>
         rootNode.put("description", d)
         // If root class is annotated with @JsonSchemaDescription, it will later override this description
     }
 
-
     val definitionsHandler = new DefinitionsHandler
     val rootVisitor = new MyJsonFormatVisitorWrapper(rootObjectMapper, node = rootNode, definitionsHandler = definitionsHandler, currentProperty = None)
-
 
     rootObjectMapper.acceptJsonFormatVisitor(javaType, rootVisitor)
 
@@ -1049,7 +1025,6 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
     }
 
     rootNode
-
   }
 
   implicit class JsonNodeExtension(o:JsonNode) {

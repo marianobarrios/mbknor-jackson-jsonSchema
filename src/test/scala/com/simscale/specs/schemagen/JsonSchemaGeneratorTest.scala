@@ -604,7 +604,7 @@ class JsonSchemaGeneratorTest extends FunSuite with Matchers {
   test("custom serializer not overriding JsonSerializer.acceptJsonFormatVisitor") {
     val jsonNode = assertToFromJson(jsonSchemaGenerator, testData.pojoWithCustomSerializer)
     val schema = generateAndValidateSchema(jsonSchemaGenerator, testData.pojoWithCustomSerializer.getClass, Some(jsonNode))
-    assert(schema.asInstanceOf[ObjectNode].fieldNames().asScala.toList == List("$schema", "title")) // Empty schema due to custom serializer
+    assert(schema.asInstanceOf[ObjectNode].fieldNames().asScala.toList == List("$schema")) // Empty schema due to custom serializer
   }
 
   test("object with property using custom serializer not overriding JsonSerializer.acceptJsonFormatVisitor") {
