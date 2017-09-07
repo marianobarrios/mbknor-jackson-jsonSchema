@@ -27,7 +27,6 @@ object JsonSchemaConfig {
     useOneOfForOption = false,
     useOneOfForNullables = false,
     useMinLengthForNotNull = false,
-    useTypeIdForDefinitionName = false,
     customType2FormatMapping = Map(),
     uniqueItemClasses = Set(),
     classTypeReMapping = Map()
@@ -44,7 +43,6 @@ object JsonSchemaConfig {
     useOneOfForOption = true,
     useOneOfForNullables = false,
     useMinLengthForNotNull = true,
-    useTypeIdForDefinitionName = false,
     customType2FormatMapping = Map(
       // dates
       "java.time.LocalDateTime" -> "datetime-local",
@@ -73,7 +71,6 @@ object JsonSchemaConfig {
     useOneOfForOption = true,
     useOneOfForNullables = true,
     useMinLengthForNotNull = false,
-    useTypeIdForDefinitionName = false,
     customType2FormatMapping = Map(),
     uniqueItemClasses = Set(),
     classTypeReMapping = Map()
@@ -86,7 +83,6 @@ case class JsonSchemaConfig(
   useOneOfForOption:Boolean,
   useOneOfForNullables:Boolean,
   useMinLengthForNotNull:Boolean,
-  useTypeIdForDefinitionName:Boolean,
   customType2FormatMapping:Map[String, String],
   uniqueItemClasses:Set[Class[_]], // If rendering array and type is instanceOf class in this set, then we add 'uniqueItems": true' to schema - See // https://github.com/jdorn/json-editor for more info
   classTypeReMapping:Map[Class[_], Class[_]] // Can be used to prevent rendering using polymorphism for specific classes.
@@ -128,7 +124,6 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
     node.put("format", format)
   }
 
-
   case class DefinitionInfo(ref:Option[String], jsonObjectFormatVisitor: Option[JsonObjectFormatVisitor])
 
   // Class that manages creating new defenitions or getting $refs to existing definitions
@@ -153,13 +148,6 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
       workInProgressStack = workInProgressStack.tail
     }
 
-    def getDefinitionName (clazz:Class[_]) = {
-      if (config.useTypeIdForDefinitionName)
-        clazz.getName
-      else
-        clazz.getSimpleName
-    }
-
     // Either creates new definitions or return $ref to existing one
     def getOrCreateDefinition(clazz:Class[_])(objectDefinitionBuilder:(ObjectNode) => Option[JsonObjectFormatVisitor]): DefinitionInfo = {
 
@@ -181,7 +169,7 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
 
           // new one - must build it
           var retryCount = 0
-          var shortRef = getDefinitionName(clazz)
+          var shortRef = clazz.getSimpleName
           var longRef = "#/definitions/" + shortRef
           while (class2Ref.values.toList.contains(longRef)) {
             retryCount = retryCount + 1
@@ -425,7 +413,6 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
       // There is no way to specify map in jsonSchema,
       // So we're going to treat it as type=object with additionalProperties = true,
       // so that it can hold whatever the map can hold
-
 
       node.put("type", "object")
 

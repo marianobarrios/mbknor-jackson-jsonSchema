@@ -46,26 +46,18 @@ class JsonSchemaGeneratorTest extends FunSuite with Matchers {
       om.setTimeZone(TimeZone.getDefault())
   }
 
-
-
   val jsonSchemaGenerator = new JsonSchemaGenerator(_objectMapper)
   val jsonSchemaGeneratorHTML5 = new JsonSchemaGenerator(_objectMapper, config = JsonSchemaConfig.html5EnabledSchema)
   val jsonSchemaGeneratorScala = new JsonSchemaGenerator(_objectMapperScala)
   val jsonSchemaGeneratorScalaHTML5 = new JsonSchemaGenerator(_objectMapperScala, config = JsonSchemaConfig.html5EnabledSchema)
-
-  val vanillaJsonSchemaDraft4WithIds = JsonSchemaConfig.vanillaJsonSchemaDraft4.copy(useTypeIdForDefinitionName = true)
-  val jsonSchemaGeneratorWithIds = new JsonSchemaGenerator(_objectMapperScala, vanillaJsonSchemaDraft4WithIds)
-
   val jsonSchemaGeneratorNullable = new JsonSchemaGenerator(_objectMapper, config = JsonSchemaConfig.nullableJsonSchemaDraft4)
   val jsonSchemaGeneratorHTML5Nullable = new JsonSchemaGenerator(_objectMapper, config = JsonSchemaConfig.html5EnabledSchema.copy(useOneOfForNullables = true))
-  val jsonSchemaGeneratorWithIdsNullable = new JsonSchemaGenerator(_objectMapperScala, vanillaJsonSchemaDraft4WithIds.copy(useOneOfForNullables = true))
 
   val testData = new TestData {}
 
   def asPrettyJson(node:JsonNode, om:ObjectMapper):String = {
     om.writerWithDefaultPrettyPrinter().writeValueAsString(node)
   }
-
 
   // Asserts that we're able to go from object => json => equal object
   def assertToFromJson(g:JsonSchemaGenerator, o:Any): JsonNode = {
@@ -293,32 +285,6 @@ class JsonSchemaGeneratorTest extends FunSuite with Matchers {
 
       assertNullableChild1(schema, "/properties/child/oneOf/1/oneOf", html5Checks = true)
       assertNullableChild2(schema, "/properties/child/oneOf/1/oneOf", html5Checks = true)
-    }
-
-    //Using fully-qualified class names
-    {
-      val jsonNode = assertToFromJson(jsonSchemaGeneratorWithIds, testData.pojoWithParent)
-      val schema = generateAndValidateSchema(jsonSchemaGeneratorWithIds, testData.pojoWithParent.getClass, Some(jsonNode))
-
-      assert(!schema.at("/additionalProperties").asBoolean())
-      assert(schema.at("/properties/pojoValue/type").asText() == "boolean")
-      assertDefaultValues(schema)
-
-      assertChild1(schema, "/properties/child/oneOf", "com.simscale.specs.schemagen.testData.polymorphism1.Child1")
-      assertChild2(schema, "/properties/child/oneOf", "com.simscale.specs.schemagen.testData.polymorphism1.Child2")
-    }
-
-    // Using fully-qualified class names and nullable types
-    {
-      val jsonNode = assertToFromJson(jsonSchemaGeneratorWithIdsNullable, testData.pojoWithParent)
-      val schema = generateAndValidateSchema(jsonSchemaGeneratorWithIdsNullable, testData.pojoWithParent.getClass, Some(jsonNode))
-
-      assert(!schema.at("/additionalProperties").asBoolean())
-      assertNullableType(schema, "/properties/pojoValue", "boolean")
-      assertNullableDefaultValues(schema)
-
-      assertNullableChild1(schema, "/properties/child/oneOf/1/oneOf", "com.simscale.specs.schemagen.testData.polymorphism1.Child1")
-      assertNullableChild2(schema, "/properties/child/oneOf/1/oneOf", "com.simscale.specs.schemagen.testData.polymorphism1.Child2")
     }
 
     // Scala
