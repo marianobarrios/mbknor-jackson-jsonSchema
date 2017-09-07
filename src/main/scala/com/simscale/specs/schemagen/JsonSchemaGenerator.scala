@@ -585,7 +585,7 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
       } else {
         // We do not have subtypes
 
-        val objectBuilder:ObjectNode => Option[JsonObjectFormatVisitor] = { thisObjectNode: ObjectNode =>
+        val objectBuilder: ObjectNode => Option[JsonObjectFormatVisitor] = { thisObjectNode: ObjectNode =>
 
           thisObjectNode.put("type", "object")
           thisObjectNode.put("additionalProperties", false)
@@ -848,13 +848,10 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
     }
   }
 
-  def generateJsonSchema[T](clazz: Class[T]): JsonNode = generateJsonSchema(clazz, None, None)
-  def generateJsonSchema[T](javaType: JavaType): JsonNode = generateJsonSchema(javaType, None, None)
+  def generateJsonSchemaFromClass[T](clazz: Class[T], title: Option[String] = None, description:Option[String] = None): JsonNode = {
 
-  def generateJsonSchema[T](clazz: Class[T], title:Option[String], description:Option[String]): JsonNode = {
-
-    def tryToReMapType(originalClass: Class[_]):Class[_] = {
-      config.classTypeReMapping.get(originalClass).map { mappedToClass:Class[_] =>
+    def tryToReMapType(originalClass: Class[_]): Class[_] = {
+      config.classTypeReMapping.get(originalClass).map { mappedToClass: Class[_] =>
         logger.debug(s"Class $originalClass is remapped to $mappedToClass")
         mappedToClass
       }.getOrElse(originalClass)
@@ -863,11 +860,11 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
     val clazzToUse = tryToReMapType(clazz)
     val javaType = rootObjectMapper.constructType(clazzToUse)
 
-    generateJsonSchema(javaType, title, description)
+    generateJsonSchemaFromJavaType(javaType, title, description)
 
   }
 
-  def generateJsonSchema[T <: Any](javaType: JavaType, title:Option[String], description:Option[String]): JsonNode = {
+  def generateJsonSchemaFromJavaType[T](javaType: JavaType, title: Option[String] = None, description: Option[String] = None): JsonNode = {
 
     val rootNode = JsonNodeFactory.instance.objectNode()
 
@@ -894,8 +891,8 @@ class JsonSchemaGenerator(val rootObjectMapper: ObjectMapper, config:JsonSchemaC
 
     rootObjectMapper.acceptJsonFormatVisitor(javaType, rootVisitor)
 
-    definitionsHandler.getFinalDefinitionsNode().foreach {
-      definitionsNode => rootNode.set("definitions", definitionsNode)
+    definitionsHandler.getFinalDefinitionsNode().foreach { definitionsNode =>
+      rootNode.set("definitions", definitionsNode)
     }
 
     rootNode

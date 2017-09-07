@@ -90,7 +90,7 @@ class JsonSchemaGeneratorTest extends FunSuite with Matchers {
   // Generates schema, validates the schema using external schema validator and
   // Optionally tries to validate json against the schema.
   def generateAndValidateSchema(g:JsonSchemaGenerator, clazz:Class[_], jsonToTestAgainstSchema:Option[JsonNode] = None):JsonNode = {
-    val schema = g.generateJsonSchema(clazz)
+    val schema = g.generateJsonSchemaFromClass(clazz)
 
     println("--------------------------------------------")
     println(asPrettyJson(schema, g.rootObjectMapper))
@@ -105,7 +105,7 @@ class JsonSchemaGeneratorTest extends FunSuite with Matchers {
   // Generates schema, validates the schema using external schema validator and
   // Optionally tries to validate json against the schema.
   def generateAndValidateSchemaUsingJavaType(g:JsonSchemaGenerator, javaType:JavaType, jsonToTestAgainstSchema:Option[JsonNode] = None):JsonNode = {
-    val schema = g.generateJsonSchema(javaType)
+    val schema = g.generateJsonSchemaFromJavaType(javaType)
 
     println("--------------------------------------------")
     println(asPrettyJson(schema, g.rootObjectMapper))
@@ -927,8 +927,8 @@ class JsonSchemaGeneratorTest extends FunSuite with Matchers {
   }
 
   test("issue 24") {
-    jsonSchemaGenerator.generateJsonSchema(classOf[EntityWrapper])
-    jsonSchemaGeneratorNullable.generateJsonSchema(classOf[EntityWrapper])
+    jsonSchemaGenerator.generateJsonSchemaFromClass(classOf[EntityWrapper])
+    jsonSchemaGeneratorNullable.generateJsonSchemaFromClass(classOf[EntityWrapper])
   }
 
   test("Polymorphism oneOf-ordering") {
@@ -959,7 +959,7 @@ class JsonSchemaGeneratorTest extends FunSuite with Matchers {
   }
 
   test("PolymorphismAndTitle") {
-    val schema = jsonSchemaGeneratorScala.generateJsonSchema(classOf[PolymorphismAndTitleBase])
+    val schema = jsonSchemaGeneratorScala.generateJsonSchemaFromClass(classOf[PolymorphismAndTitleBase])
 
     println("--------------------------------------------")
     println(asPrettyJson(schema, jsonSchemaGeneratorScala.rootObjectMapper))
@@ -971,7 +971,7 @@ class JsonSchemaGeneratorTest extends FunSuite with Matchers {
   test("UsingJsonSchemaOptions") {
 
     {
-      val schema = jsonSchemaGeneratorScala.generateJsonSchema(classOf[UsingJsonSchemaOptions])
+      val schema = jsonSchemaGeneratorScala.generateJsonSchemaFromClass(classOf[UsingJsonSchemaOptions])
 
       println("--------------------------------------------")
       println(asPrettyJson(schema, jsonSchemaGeneratorScala.rootObjectMapper))
@@ -981,7 +981,7 @@ class JsonSchemaGeneratorTest extends FunSuite with Matchers {
     }
 
     {
-      val schema = jsonSchemaGeneratorScala.generateJsonSchema(classOf[UsingJsonSchemaOptionsBase])
+      val schema = jsonSchemaGeneratorScala.generateJsonSchemaFromClass(classOf[UsingJsonSchemaOptionsBase])
 
       println("--------------------------------------------")
       println(asPrettyJson(schema, jsonSchemaGeneratorScala.rootObjectMapper))
